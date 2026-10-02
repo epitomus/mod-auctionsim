@@ -44,6 +44,12 @@ namespace
 
         for (AuctionEntry* auction : toRemove)
         {
+            // Someone bid on it: return their bid, as the core does when a player
+            // cancels an auction with a bid on it.
+            if (auction->bidder)
+            {
+                sAuctionMgr->SendAuctionCancelledToBidderMail(auction, trans);
+            }
             auction->DeleteFromDB(trans);
             sAuctionMgr->RemoveAItem(auction->item_guid, true, &trans);
             house->RemoveAuction(auction);
