@@ -249,6 +249,13 @@ void AuctionSim::ScanAuctions(AuctionHouseId _AuctionHouseId)
             continue;
         }
 
+        // Bid-only auctions have no buyout price to pay, and their pricePerItem of 0
+        // would always look like a bargain -- skip them.
+        if (auction->buyout == 0)
+        {
+            continue;
+        }
+
         uint32 pricePerItem = auction->buyout / auction->itemCount;
 
         // Never buy grey items, and never pay more per unit than it would cost to buy
