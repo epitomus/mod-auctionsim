@@ -2419,11 +2419,9 @@ namespace AuctionSimTests
             }
         }
 
-        auto trans = CharacterDatabase.BeginTransaction();
-        auction->DeleteFromDB(trans);
-        sAuctionMgr->RemoveAItem(auction->item_guid);
-        sAuctionMgr->GetAuctionsMapByHouseId(houseId)->RemoveAuction(auction);
-        CharacterDatabase.CommitTransaction(trans);
+        // CleanUpTestAuction deletes the entry: keep its id for the result.
+        uint32 auctionId = auction->Id;
+        CleanUpTestAuction(auction, houseId);
 
         if (!foundInHouse)
         {
@@ -2431,7 +2429,7 @@ namespace AuctionSimTests
         }
         return Pass(
             name,
-            Acore::StringFormat("listed and cleaned up item {} (auction {})", candidate->GetItemID(), auction->Id));
+            Acore::StringFormat("listed and cleaned up item {} (auction {})", candidate->GetItemID(), auctionId));
     }
 
     TestResult RunLiveBuyingTest(
