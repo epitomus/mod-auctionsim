@@ -15,12 +15,21 @@ namespace
     // and returns false when it isn't.
     bool RequireEnabled(ChatHandler* handler)
     {
-        if (AuctionSim::instance() && AuctionSim::instance()->isEnabled)
+        AuctionSim* sim = AuctionSim::instance();
+        if (!sim || !sim->isEnabled)
         {
-            return true;
+            handler->SendSysMessage("AuctionSim module is disabled.");
+            return false;
         }
-        handler->SendSysMessage("AuctionSim module is disabled.");
-        return false;
+        // Enabled can be set (via the addon) before a bot exists, and the subcommands
+        // dereference the bot and its services -- same gate as the addon bridge.
+        if (!sim->GetBotPlayer())
+        {
+            handler->SendSysMessage(
+                "AuctionSim is enabled but the bot character isn't set up yet -- use Set Bot Char.");
+            return false;
+        }
+        return true;
     }
 
     // Runs `fn` and returns how long it took, in whole milliseconds.

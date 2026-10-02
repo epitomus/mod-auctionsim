@@ -193,6 +193,11 @@ AuctionEntry* AuctionListingService::ListOneItem(
     // round-trip correctly through the bit-preserving uint32<->int32 conversion.
     Item* item =
         Item::CreateItem(scan.GetItemID(), quantity, nullptr, false, static_cast<uint32>(scan.GetSuffixID()));
+    if (!item)
+    {
+        LOG_WARN("module", "AuctionSim: couldn't create item {} x{}, skipping listing", scan.GetItemID(), quantity);
+        return nullptr;
+    }
     item->SetOwnerGUID(_bot.GetPlayerRef().GetGUID());
 
     AuctionEntry* auction = new AuctionEntry();
