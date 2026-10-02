@@ -44,6 +44,12 @@ namespace
 
         for (AuctionEntry* auction : toRemove)
         {
+            // Someone bid on it: return their bid, as the core does when a player
+            // cancels an auction with a bid on it.
+            if (auction->bidder)
+            {
+                sAuctionMgr->SendAuctionCancelledToBidderMail(auction, trans);
+            }
             auction->DeleteFromDB(trans);
             sAuctionMgr->RemoveAItem(auction->item_guid, true, &trans);
             house->RemoveAuction(auction);
@@ -245,6 +251,13 @@ void AuctionSim::ScanAuctions(AuctionHouseId _AuctionHouseId)
         ScannedItem const* scannedItem =
             config->FindScannedItem(_AuctionHouseId, proto->Class, proto->Quality, auction->item_template);
         if (!scannedItem)
+        {
+            continue;
+        }
+
+        // Bid-only auctions have no buyout price to pay, and their pricePerItem of 0
+        // would always look like a bargain -- skip them.
+        if (auction->buyout == 0)
         {
             continue;
         }

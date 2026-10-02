@@ -78,9 +78,25 @@ void AuctionBuyingService::EnqueueForTest(AuctionEntry* auction, time_t buyTime)
 
 void AuctionBuyingService::BuyItem(AuctionEntry* auction, AuctionHouseId houseId)
 {
+    // A bid-only auction has nothing to buy out; "buying" it at 0 would destroy the
+    // seller's item for nothing. ScanAuctions never queues one, but the queue is
+    // filled up to an hour earlier, so check again.
+    if (auction->buyout == 0)
+    {
+        return;
+    }
+
     auto trans = CharacterDatabase.BeginTransaction();
 
-    auction->bidder = _bot.GetPlayerRef().GetGUID();
+    // Buying out an auction someone has bid on: refund their bid, as the core does
+    // for a player's buyout (WorldSession::HandleAuctionPlaceBid).
+    Player* botPlayer = &_bot.GetPlayerRef();
+    if (auction->bidder && auction->bidder != botPlayer->GetGUID())
+    {
+        sAuctionMgr->SendAuctionOutbiddedMail(auction, auction->buyout, botPlayer, trans);
+    }
+
+    auction->bidder = botPlayer->GetGUID();
     auction->bid = auction->buyout;
     sAuctionMgr->SendAuctionSuccessfulMail(auction, trans);
     auction->DeleteFromDB(trans);
