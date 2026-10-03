@@ -1,4 +1,6 @@
 #include "ScannedItem.h"
+#include <algorithm>
+#include <cmath>
 #include <cstdint>
 #include <initializer_list>
 #include <optional>
@@ -20,6 +22,35 @@ namespace
             }
         }
         return fallback;
+    }
+
+    // The lower median of `value(row)` over the rows: with an even count, the lower of
+    // the two middle values. `rows` is non-empty.
+    template <typename T, typename Value>
+    T LowerMedian(std::vector<ScannedItem const*> const& rows, Value value)
+    {
+        std::vector<T> values;
+        values.reserve(rows.size());
+        for (ScannedItem const* row : rows)
+        {
+            values.push_back(value(*row));
+        }
+        auto mid = values.begin() + (values.size() - 1) / 2;
+        std::nth_element(values.begin(), mid, values.end());
+        return *mid;
+    }
+
+    // `market` scaled by the lower median over the rows of `figure(row) / row's market`,
+    // rounded and clamped to uint32. A row with no market price counts as ratio 1.
+    template <typename Figure>
+    uint32 ScaledByMedianRatio(std::vector<ScannedItem const*> const& rows, uint32 market, Figure figure)
+    {
+        double ratio = LowerMedian<double>(rows, [&figure](ScannedItem const& row) {
+            uint32 rowMarket = row.GetMarketPrice();
+            return rowMarket > 0 ? static_cast<double>(figure(row)) / rowMarket : 1.0;
+        });
+        double scaled = std::round(static_cast<double>(market) * ratio);
+        return static_cast<uint32>(std::clamp(scaled, 0.0, static_cast<double>(UINT32_MAX)));
     }
 }
 
@@ -111,4 +142,34 @@ uint32 ScannedItem::GetStackHigh() const { return FirstPositive({stack.adjHigh},
 uint32 ScannedItem::GetTypicalListingCount() const
 {
     return FirstPositive({listing.adjMedian, listing.adjMean, listing.median, listing.mean}, 1);
+}
+
+ItemPrice ItemPrice::Pool(std::vector<ScannedItem const*> const& rows)
+{
+    ItemPrice pooled;
+    if (rows.empty())
+    {
+        return pooled;
+    }
+
+    // The other figures are the rows' median ratio to their own market price, applied to
+    // the pooled market: a median of each figure on its own could pair the market of one
+    // row with the ceiling of a much dearer one (5g market, 198g ceiling).
+    pooled.market = LowerMedian<uint32>(rows, [](ScannedItem const& row) { return row.GetMarketPrice(); });
+    pooled.ceiling = std::max(
+        ScaledByMedianRatio(rows, pooled.market, [](ScannedItem const& row) { return row.GetBuyCeiling(); }),
+        pooled.market);
+    pooled.listLow =
+        ScaledByMedianRatio(rows, pooled.market, [](ScannedItem const& row) { return row.GetListLow(); });
+    pooled.listHigh =
+        ScaledByMedianRatio(rows, pooled.market, [](ScannedItem const& row) { return row.GetListHigh(); });
+
+    uint64_t samples = 0;
+    for (ScannedItem const* row : rows)
+    {
+        samples += row->GetSampleCount();
+    }
+    pooled.sampleCount = static_cast<uint32>(std::min<uint64_t>(samples, UINT32_MAX));
+    pooled.rowCount = static_cast<uint32>(rows.size());
+    return pooled;
 }

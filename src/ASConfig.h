@@ -46,17 +46,17 @@ public:
     }
 
     // ScannedItem storage. A std::deque, not a vector: the ScannedItem* kept in
-    // ItemSelectionTable / ItemIndex must stay valid as rows are appended, and a
-    // deque never relocates existing elements on growth (a vector would).
+    // ItemSelectionTable must stay valid as rows are appended, and a deque never
+    // relocates existing elements on growth (a vector would).
     std::deque<ScannedItem> ScanData;
 
     // [house][class][quality] -> the pool the listing service draws from.
     std::vector<ScannedItem*> ItemSelectionTable[kAuctionHouseIndexBound][MAX_ITEM_CLASS][MAX_ITEM_QUALITY];
 
-    // (house, class, quality, itemID) -> that item's row, so FindScannedItem is
-    // O(1) during a scan instead of a linear bucket walk. First row wins on the
-    // rare duplicate key (suffix is not part of the key, matching the old search).
-    std::unordered_map<uint64_t, ScannedItem const*> ItemIndex;
+    // (house, class, quality, itemID) -> the item's price pooled over all its rows
+    // (one per random suffix; see ItemPrice), computed once at load so FindItemPrice
+    // is one hash lookup during a scan.
+    std::unordered_map<uint64_t, ItemPrice> ItemIndex;
 
     // Per-(itemClass, quality) listing multiplier vs. the real market, from the
     // AuctionSim.<Class>Percent config lines. Plain decimals (1, 1.5, 0.25, 0).
@@ -80,10 +80,10 @@ public:
 
     std::vector<ScannedItem*> const& ItemsFor(AuctionHouseId houseId, uint32 itemClass, uint32 quality) const;
 
-    // O(1) lookup of a specific item's row within one (houseId, itemClass, quality)
-    // bucket. Returns nullptr if the coordinate is out of range or the item is not
-    // in that bucket.
-    ScannedItem const* FindScannedItem(AuctionHouseId houseId, uint32 itemClass, uint32 quality, uint32 itemID) const;
+    // O(1) lookup of an item's pooled price within one (houseId, itemClass, quality)
+    // bucket, whatever the suffix of the copy being priced. Returns nullptr if the
+    // coordinate is out of range or the item is not in that bucket.
+    ItemPrice const* FindItemPrice(AuctionHouseId houseId, uint32 itemClass, uint32 quality, uint32 itemID) const;
 
     // One (itemClass, quality) mask cell, addressed the same way the addon bridge's wire
     // protocol addresses it: percentConfigKey matches the config key suffix (e.g.
