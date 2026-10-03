@@ -137,14 +137,14 @@ quality: 2
 enabled: yes
 buyable: yes
 vendor_cap: 0
-house: name=alliance id=2 data=yes suffix=0 samples=22237 market=125000 ceiling=146750 sure=125000 half=135875 tenth=146750
-house: name=horde id=6 data=yes suffix=0 samples=26518 market=129999 ceiling=159400 sure=129999 half=144699 tenth=159400
+house: name=alliance id=2 data=yes rows=1 samples=22237 market=125000 ceiling=146750 sure=125000 half=135875 tenth=146750
+house: name=horde id=6 data=yes rows=1 samples=26518 market=129999 ceiling=159400 sure=129999 half=144699 tenth=159400
 ```
 
 - All prices are per unit, in copper. The bot compares an auction's buyout divided by its stack size.
 - `enabled`: whether the bot is running (it scans and buys only then). `buyable`: `no` for poor-quality (grey) items, which the bot never buys.
 - `vendor_cap`: the item's vendor purchase price when a vendor stocks it (`npc_vendor`), else 0. The bot never pays more than that per unit. It applies even when the only vendor has limited stock (issue #6).
-- One `house:` line per auction house, as space-separated `key=value` fields. With `data=no` the item isn't in the price data for that house, and the bot never buys it there. With `data=yes`: `market` (outlier-trimmed median) and `ceiling` (75th percentile) of the scanned prices, from the row with suffix `suffix` and `samples` scanned buyouts (a random-suffix item has a row per suffix; the bot uses the first one, whatever the auction's suffix), then the highest price per unit for each chance of a sale to the bot:
+- One `house:` line per auction house, as space-separated `key=value` fields. With `data=no` the item isn't in the price data for that house, and the bot never buys it there. With `data=yes`: `market` (outlier-trimmed median) and `ceiling` (75th percentile) of the scanned prices, `rows` and `samples` the price rows and scanned buyouts they come from (an item with random suffixes has a row per suffix and one price for every suffix, the median over its rows: see "Random suffixes" above; any other item has 1 row), then the highest price per unit for each chance of a sale to the bot:
   - `sure`: at or under it the bot always buys: its next hourly scan queues the purchase, which goes through within 45 minutes.
   - `half`: above `sure` and at or under `half`, a 50% chance over the auction's lifetime (the bot reconsiders it at every scan).
   - `tenth`: above `half` and at or under `tenth`, at least 10% over the lifetime (each scan rolls where the 50% band ends, between half and 70% of the way to the ceiling). Above `tenth` the bot never buys.
