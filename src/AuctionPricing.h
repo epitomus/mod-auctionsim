@@ -72,6 +72,21 @@ namespace AuctionPricing
         BuyTolerance const& tolerance,
         uint32 remainingScans);
 
+    // The highest per-unit buyout at each chance tier of ShouldBuyAtPrice, for telling
+    // a seller what the bot will pay. At or under `sure` the bot always buys; at or
+    // under `half`, with kNearTierBuyChance (50%) over the auction's life whatever a
+    // scan's tolerance roll (the near tier always reaches at least halfway to the
+    // ceiling); at or under `tenth`, with at least kFarTierBuyChance (10%); above it,
+    // never. A non-zero vendorBuyPrice caps all three (IsWithinVendorBuyPrice).
+    struct BuyPriceTiers
+    {
+        uint32 sure;
+        uint32 half;
+        uint32 tenth;
+    };
+
+    BuyPriceTiers CalculateBuyPriceTiers(uint32 marketPrice, uint32 ceilingPrice, uint32 vendorBuyPrice);
+
     // Rolls when (as an absolute time) a queued purchase should execute, capped at 45
     // minutes out so it always fires before the next scan reconsiders the auction.
     time_t RollBuyTime(time_t expireTime, time_t now);
