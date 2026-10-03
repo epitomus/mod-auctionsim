@@ -74,7 +74,7 @@ namespace AuctionPricing
 
     // The highest per-unit buyout at each chance tier of ShouldBuyAtPrice, for telling
     // a seller what the bot will pay. At or under `sure` the bot always buys; at or
-    // under `half`, with kNearTierBuyChance (50%) over the auction's life whatever a
+    // under `half`, with kNearTierBuyChance (50%) over the time left at each scan whatever a
     // scan's tolerance roll (the near tier always reaches at least halfway to the
     // ceiling); at or under `tenth`, with at least kFarTierBuyChance (10%); above it,
     // never. A non-zero vendorBuyPrice caps all three (IsWithinVendorBuyPrice).

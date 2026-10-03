@@ -146,8 +146,8 @@ house: name=horde id=6 data=yes rows=1 samples=26518 market=129999 ceiling=15940
 - `vendor_cap`: the item's vendor purchase price when a vendor stocks it (`npc_vendor`), else 0. The bot never pays more than that per unit. It applies even when the only vendor has limited stock (issue #6).
 - One `house:` line per auction house, as space-separated `key=value` fields. With `data=no` the item isn't in the price data for that house, and the bot never buys it there. With `data=yes`: `market` (outlier-trimmed median) and `ceiling` (75th percentile) of the scanned prices, `rows` and `samples` the price rows and scanned buyouts they come from (an item with random suffixes has a row per suffix and one price for every suffix, the median over its rows: see "Random suffixes" above; any other item has 1 row), then the highest price per unit for each chance of a sale to the bot:
   - `sure`: at or under it the bot always buys: its next hourly scan queues the purchase, which goes through within 45 minutes.
-  - `half`: above `sure` and at or under `half`, a 50% chance over the auction's lifetime (the bot reconsiders it at every scan).
-  - `tenth`: above `half` and at or under `tenth`, at least 10% over the lifetime (each scan rolls where the 50% band ends, between half and 70% of the way to the ceiling). Above `tenth` the bot never buys.
+  - `half`: above `sure` and at or under `half`, a 50% chance over the auction's remaining time at each scan (the bot reconsiders it at every scan, so the chances compound: 88% over a 12 h listing, 93% over 24 h, 95% over 48 h).
+  - `tenth`: above `half` and at or under `tenth`, at least 10% over the remaining time at each scan (at least 28%, 33% and 37% over 12, 24 and 48 h; each scan rolls where the 50% band ends, between half and 70% of the way to the ceiling). Above `tenth` the bot never buys.
   All three are capped at `vendor_cap` when that isn't 0.
 - `format` is currently 1 and changes only if a line changes meaning. Keys and fields may be added; tools should ignore those they don't know.
 - An unknown item, or price data that failed to load, is an error.
