@@ -213,6 +213,22 @@ namespace AuctionPricing
         return roll_chance_f(AmortizeOverScans(targetChance, remainingScans) * 100.0f);
     }
 
+    BuyPriceTiers CalculateBuyPriceTiers(uint32 marketPrice, uint32 ceilingPrice, uint32 vendorBuyPrice)
+    {
+        // ShouldBuyAtPrice treats a ceiling at or under the market as "only the sure
+        // tier", so every tier tops out at the market price then.
+        uint32 spread = ceilingPrice > marketPrice ? ceilingPrice - marketPrice : 0;
+        BuyPriceTiers tiers{marketPrice, marketPrice + spread / 2, marketPrice + spread};
+
+        if (vendorBuyPrice > 0)
+        {
+            tiers.sure = std::min(tiers.sure, vendorBuyPrice);
+            tiers.half = std::min(tiers.half, vendorBuyPrice);
+            tiers.tenth = std::min(tiers.tenth, vendorBuyPrice);
+        }
+        return tiers;
+    }
+
     time_t RollBuyTime(time_t expireTime, time_t now)
     {
         time_t window = std::min(expireTime - now, kMaxQueueDelaySeconds);

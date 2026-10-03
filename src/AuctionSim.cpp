@@ -257,9 +257,7 @@ void AuctionSim::ScanAuctions(AuctionHouseId _AuctionHouseId)
         // BuyPrice left on an item no vendor sells is stale DB data, not a real floor,
         // so those pass the check (0 disables it). Grey auctions are still counted
         // above so the listing side is unaffected.
-        uint32 vendorBuyPrice = (config->IsVendorSold(auction->item_template) && proto->BuyPrice > 0)
-            ? static_cast<uint32>(proto->BuyPrice)
-            : 0;
+        uint32 vendorBuyPrice = config->VendorBuyCap(proto);
         if (!AuctionPricing::IsBuyableQuality(proto->Quality) ||
             !AuctionPricing::IsWithinVendorBuyPrice(pricePerItem, vendorBuyPrice))
         {

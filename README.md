@@ -111,3 +111,42 @@ Notes
 ```
 
 <img src="images/addon.png">
+
+## GM Commands
+
+All commands need an administrator account (GM level 3) and also work from the worldserver console and over SOAP.
+
+- `.auctionsim scan` -- scan both auction houses now (list new items, queue purchases).
+- `.auctionsim showqueue` -- size and timing of the buy queue.
+- `.auctionsim delete` -- remove all of the bot's auctions.
+- `.auctionsim cleanovercap` -- remove the bot's auctions above the configured level caps.
+- `.auctionsim test` -- run the self-tests (briefly lists and buys a few real auctions).
+- `.auctionsim price <item id or link>` -- what the bot pays for an item, per auction house.
+
+### `.auctionsim price`
+
+Tells a seller (or a tool) at what price the bot buys an item. It reads only the loaded price data, so it works while the module is disabled.
+
+```
+> .auctionsim price 36908
+format: 1
+item: 36908
+name: Frost Lotus
+quality: 2
+enabled: yes
+buyable: yes
+vendor_cap: 0
+house: name=alliance id=2 data=yes suffix=0 samples=22237 market=125000 ceiling=146750 sure=125000 half=135875 tenth=146750
+house: name=horde id=6 data=yes suffix=0 samples=26518 market=129999 ceiling=159400 sure=129999 half=144699 tenth=159400
+```
+
+- All prices are per unit, in copper. The bot compares an auction's buyout divided by its stack size.
+- `enabled`: whether the bot is running (it scans and buys only then). `buyable`: `no` for poor-quality (grey) items, which the bot never buys.
+- `vendor_cap`: the item's vendor purchase price when a vendor stocks it (`npc_vendor`), else 0. The bot never pays more than that per unit. It applies even when the only vendor has limited stock (issue #6).
+- One `house:` line per auction house, as space-separated `key=value` fields. With `data=no` the item isn't in the price data for that house, and the bot never buys it there. With `data=yes`: `market` (outlier-trimmed median) and `ceiling` (75th percentile) of the scanned prices, from the row with suffix `suffix` and `samples` scanned buyouts (a random-suffix item has a row per suffix; the bot uses the first one, whatever the auction's suffix), then the highest price per unit for each chance of a sale to the bot:
+  - `sure`: at or under it the bot always buys: its next hourly scan queues the purchase, which goes through within 45 minutes.
+  - `half`: above `sure` and at or under `half`, a 50% chance over the auction's lifetime (the bot reconsiders it at every scan).
+  - `tenth`: above `half` and at or under `tenth`, at least 10% over the lifetime (each scan rolls where the 50% band ends, between half and 70% of the way to the ceiling). Above `tenth` the bot never buys.
+  All three are capped at `vendor_cap` when that isn't 0.
+- `format` is currently 1 and changes only if a line changes meaning. Keys and fields may be added; tools should ignore those they don't know.
+- An unknown item, or price data that failed to load, is an error.
