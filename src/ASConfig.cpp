@@ -204,10 +204,12 @@ void ASConfig::LoadItemRow(std::string const& line, std::string const& filepath)
     }
 }
 
-// Resolves each row's item_template once and files it into ItemSelectionTable and
-// ItemIndex. ScanData is a deque, so the pointers taken here stay valid.
+// Resolves each row's item_template once and files it into ItemSelectionTable, then
+// pools each item's rows into its ItemIndex price. ScanData is a deque, so the
+// pointers taken here stay valid.
 void ASConfig::BuildSelectionTables(std::string const& filepath)
 {
+    std::unordered_map<uint64_t, std::vector<ScannedItem const*>> rowsByItem;
     for (ScannedItem& item : this->ScanData)
     {
         ItemTemplate const* proto = sObjectMgr->GetItemTemplate(item.GetItemID());
@@ -228,7 +230,13 @@ void ASConfig::BuildSelectionTables(std::string const& filepath)
         }
 
         this->ItemSelectionTable[house][proto->Class][proto->Quality].push_back(&item);
-        this->ItemIndex.try_emplace(IndexKey(house, proto->Class, proto->Quality, item.GetItemID()), &item);
+        rowsByItem[IndexKey(house, proto->Class, proto->Quality, item.GetItemID())].push_back(&item);
+    }
+
+    this->ItemIndex.reserve(rowsByItem.size());
+    for (auto const& [key, rows] : rowsByItem)
+    {
+        this->ItemIndex.emplace(key, ItemPrice::Pool(rows));
     }
 }
 
@@ -283,7 +291,7 @@ ASConfig::CategoryDepth const& ASConfig::GetCategoryDepth(
     return categoryDepth[house][itemClass][quality];
 }
 
-ScannedItem const* ASConfig::FindScannedItem(
+ItemPrice const* ASConfig::FindItemPrice(
     AuctionHouseId houseId, uint32 itemClass, uint32 quality, uint32 itemID) const
 {
     size_t house = static_cast<size_t>(houseId);
@@ -293,7 +301,7 @@ ScannedItem const* ASConfig::FindScannedItem(
     }
 
     auto it = ItemIndex.find(IndexKey(house, itemClass, quality, itemID));
-    return it != ItemIndex.end() ? it->second : nullptr;
+    return it != ItemIndex.end() ? &it->second : nullptr;
 }
 
 namespace

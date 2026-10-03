@@ -1,4 +1,8 @@
 #include "AuctionSimTests.h"
+#include <algorithm>
+#include <optional>
+#include <string>
+#include <vector>
 #include "ASConfig.h"
 #include "AuctionBuyingService.h"
 #include "AuctionListingService.h"
@@ -86,8 +90,28 @@ namespace
         return Fail("Listing masks configured", "every listing multiplier is 0 -- nothing will ever be listed");
     }
 
-    TestResult TestFindScannedItemRoundTrip(ASConfig const& config)
+    bool SamePrice(ItemPrice const& a, ItemPrice const& b)
     {
+        return a.market == b.market && a.ceiling == b.ceiling && a.listLow == b.listLow &&
+               a.listHigh == b.listHigh && a.sampleCount == b.sampleCount && a.rowCount == b.rowCount;
+    }
+
+    std::string Describe(ItemPrice const& p)
+    {
+        return Acore::StringFormat(
+            "market={} ceiling={} band={}-{} samples={} rows={}", p.market, p.ceiling, p.listLow, p.listHigh,
+            p.sampleCount, p.rowCount);
+    }
+
+    // Every row resolves to its item's pooled price, an item with one row is priced
+    // exactly as that row, and for the first item with 3+ (suffix) rows the market is
+    // the lower median of the rows' -- the pooling as wired up by ASConfig, on the real
+    // data.
+    TestResult TestFindItemPriceRoundTrip(ASConfig const& config)
+    {
+        constexpr char const* name = "FindItemPrice round-trip";
+        ScannedItem const* first = nullptr;
+        ScannedItem const* pooledRow = nullptr;
         for (ScannedItem const& item : config.ScanData)
         {
             ItemTemplate const* proto = sObjectMgr->GetItemTemplate(item.GetItemID());
@@ -97,16 +121,141 @@ namespace
             }
 
             auto houseId = static_cast<AuctionHouseId>(item.GetFactionNum());
-            ScannedItem const* found = config.FindScannedItem(houseId, proto->Class, proto->Quality, item.GetItemID());
-            if (!found || found->GetItemID() != item.GetItemID())
+            ItemPrice const* found = config.FindItemPrice(houseId, proto->Class, proto->Quality, item.GetItemID());
+            if (!found || found->rowCount == 0)
+            {
+                return Fail(name, Acore::StringFormat("item {} not found back in its own bucket", item.GetItemID()));
+            }
+            // An item with one row is priced exactly as that row.
+            if (found->rowCount == 1 &&
+                (found->market != item.GetMarketPrice() || found->ceiling != item.GetBuyCeiling() ||
+                 found->listLow != item.GetListLow() || found->listHigh != item.GetListHigh() ||
+                 found->sampleCount != item.GetSampleCount()))
             {
                 return Fail(
-                    "FindScannedItem round-trip",
-                    Acore::StringFormat("item {} not found back in its own bucket", item.GetItemID()));
+                    name,
+                    Acore::StringFormat(
+                        "item {} house {}: single row priced {}", item.GetItemID(), item.GetFactionNum(),
+                        Describe(*found)));
             }
-            return Pass("FindScannedItem round-trip", Acore::StringFormat("verified via item {}", item.GetItemID()));
+            first = first ? first : &item;
+            if (!pooledRow && found->rowCount >= 3)
+            {
+                pooledRow = &item;
+            }
         }
-        return Fail("FindScannedItem round-trip", "no ScanData entry resolves to a valid item_template to test with");
+        if (!first)
+        {
+            return Fail(name, "no ScanData entry resolves to a valid item_template to test with");
+        }
+        if (!pooledRow)
+        {
+            return Pass(name, Acore::StringFormat("verified via item {}; no item has 3+ rows", first->GetItemID()));
+        }
+
+        std::vector<uint32> markets;
+        for (ScannedItem const& item : config.ScanData)
+        {
+            if (item.GetItemID() == pooledRow->GetItemID() && item.GetFactionNum() == pooledRow->GetFactionNum())
+            {
+                markets.push_back(item.GetMarketPrice());
+            }
+        }
+        std::sort(markets.begin(), markets.end());
+
+        ItemTemplate const* proto = sObjectMgr->GetItemTemplate(pooledRow->GetItemID());
+        ItemPrice const* pooled = config.FindItemPrice(
+            static_cast<AuctionHouseId>(pooledRow->GetFactionNum()), proto->Class, proto->Quality,
+            pooledRow->GetItemID());
+        if (pooled->rowCount != markets.size() || pooled->market != markets[(markets.size() - 1) / 2])
+        {
+            return Fail(
+                name,
+                Acore::StringFormat(
+                    "item {} house {}: {} rows, market {}; want {} rows, lower median {}",
+                    pooledRow->GetItemID(), pooledRow->GetFactionNum(), pooled->rowCount, pooled->market,
+                    markets.size(), markets[(markets.size() - 1) / 2]));
+        }
+        return Pass(
+            name,
+            Acore::StringFormat(
+                "item {} house {}: {} suffix rows pooled at {}",
+                pooledRow->GetItemID(), pooledRow->GetFactionNum(), pooled->rowCount, pooled->market));
+    }
+
+    // An auctionsim.dat item row with the given price stats (market = adjMedian,
+    // ceiling = q3); the stack and listing blocks are filler.
+    std::optional<ScannedItem> MakeRow(
+        int32 suffix, uint32 samples, uint32 market, uint32 q3, uint32 adjLow, uint32 adjHigh)
+    {
+        return ScannedItem::TryParse(Acore::StringFormat(
+            "2:4566:{}:{}:{}:{}:{}:{}:{}:{}:{}:{}:{}:{}:{}:{}"
+            ":1:1:1:1:1:1:1:1:1:1:1:1"
+            ":1:1:1:1:1:1:1:1:1:1:1:1:1",
+            suffix, samples, adjLow, adjHigh, market, market, market, market, q3, adjLow, adjHigh, market,
+            market, market));
+    }
+
+    TestResult TestItemPricePool()
+    {
+        constexpr char const* name = "ItemPrice::Pool";
+
+        std::optional<ScannedItem> const plain = MakeRow(0, 40, 1000, 1300, 700, 1600);
+        std::optional<ScannedItem> const wolf = MakeRow(501, 7, 3000, 10546, 2762, 12000);
+        std::optional<ScannedItem> const bear = MakeRow(1180, 12, 8000, 19925, 5000, 26000);
+        std::optional<ScannedItem> const healing = MakeRow(2030, 1, 3000000, 3000000, 3000000, 3000000);
+        std::optional<ScannedItem> const steep = MakeRow(1801, 2, 3000, 50000, 3000, 50000);
+        std::optional<ScannedItem> const flat = MakeRow(584, 9, 8000, 9000, 7000, 9000);
+        std::optional<ScannedItem> const huge = MakeRow(-19, 4000000000u, 1000, 1300, 700, 1600);
+        if (!plain || !wolf || !bear || !healing || !steep || !flat || !huge)
+        {
+            return Fail(name, "a test row didn't parse");
+        }
+
+        // One row (an item without random suffixes): exactly that row's figures.
+        ItemPrice const single = ItemPrice::Pool({&*plain});
+        if (!SamePrice(single, {1000, 1300, 700, 1600, 40, 1}))
+        {
+            return Fail(name, "1 row: " + Describe(single));
+        }
+
+        // Suffix rows: the market is the median over the rows; the other figures are the
+        // median of each row's figure/market ratio, times that market (ceiling ratios 1,
+        // 2.49, 3.52 -> 2.49; band ratios 0.625, 0.92, 1 -> 0.92 and 1, 3.25, 4 -> 3.25);
+        // the sample counts add up. A thin, dear row (one listing at 300g) doesn't drag
+        // the price up to its own.
+        ItemPrice const three = ItemPrice::Pool({&*healing, &*wolf, &*bear});
+        if (!SamePrice(three, {8000, 19925, 7365, 26000, 20, 3}))
+        {
+            return Fail(name, "3 rows: " + Describe(three));
+        }
+
+        // An even number of rows takes the lower middle value: market 3000 of 3000 and
+        // 3000000, ceiling ratio 1 of 1 and 3.52.
+        ItemPrice const two = ItemPrice::Pool({&*healing, &*wolf});
+        if (two.market != 3000 || two.ceiling != 3000)
+        {
+            return Fail(name, "2 rows: " + Describe(two));
+        }
+
+        // Rows whose market and ceiling orders disagree: a median of the ceilings alone
+        // (50000) would pair one row's market with a much steeper row's ceiling.
+        ItemPrice const mixed = ItemPrice::Pool({&*steep, &*flat, &*healing});
+        if (mixed.market != 8000 || mixed.ceiling != 9000)
+        {
+            return Fail(name, "mixed rows: " + Describe(mixed));
+        }
+
+        // Sample counts saturate rather than wrap; no rows gives zeros.
+        if (ItemPrice::Pool({&*huge, &*huge}).sampleCount != UINT32_MAX)
+        {
+            return Fail(name, "sample count wrapped");
+        }
+        if (!SamePrice(ItemPrice::Pool({}), {}))
+        {
+            return Fail(name, "no rows did not give zeros");
+        }
+        return Pass(name);
     }
 
     TestResult TestRollStackSizeBounds()
@@ -640,7 +789,8 @@ namespace AuctionSimTests
             TestPriceDataLoaded(config),
             TestBothFactionsHavePriceData(config),
             TestListingMasksConfigured(config),
-            TestFindScannedItemRoundTrip(config),
+            TestFindItemPriceRoundTrip(config),
+            TestItemPricePool(),
             TestRollStackSizeBounds(),
             TestIsListablePriceBoundary(),
             TestRollAuctionDurationBounds(),
