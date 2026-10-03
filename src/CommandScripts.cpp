@@ -206,27 +206,26 @@ public:
         for (auto [houseId, houseName] : {std::pair{AuctionHouseId::Alliance, "alliance"},
                                           std::pair{AuctionHouseId::Horde, "horde"}})
         {
-            // The same lookup as ScanAuctions: keyed by item, not suffix, so a
-            // random-suffix item gets the first of its rows.
-            ScannedItem const* scanned = config->FindScannedItem(houseId, proto->Class, proto->Quality, itemId);
-            if (!scanned)
+            // The same lookup as ScanAuctions: one price per item, pooled over its
+            // random-suffix rows, whatever the suffix.
+            ItemPrice const* price = config->FindItemPrice(houseId, proto->Class, proto->Quality, itemId);
+            if (!price)
             {
                 handler->SendSysMessage(
                     fmt::format("house: name={} id={} data=no", houseName, static_cast<uint32>(houseId)));
                 continue;
             }
 
-            uint32 market = scanned->GetMarketPrice();
-            uint32 ceiling = scanned->GetBuyCeiling();
-            AuctionPricing::BuyPriceTiers tiers = AuctionPricing::CalculateBuyPriceTiers(market, ceiling, vendorCap);
+            AuctionPricing::BuyPriceTiers tiers =
+                AuctionPricing::CalculateBuyPriceTiers(price->market, price->ceiling, vendorCap);
             handler->SendSysMessage(fmt::format(
-                "house: name={} id={} data=yes suffix={} samples={} market={} ceiling={} sure={} half={} tenth={}",
+                "house: name={} id={} data=yes rows={} samples={} market={} ceiling={} sure={} half={} tenth={}",
                 houseName,
                 static_cast<uint32>(houseId),
-                scanned->GetSuffixID(),
-                scanned->GetSampleCount(),
-                market,
-                ceiling,
+                price->rowCount,
+                price->sampleCount,
+                price->market,
+                price->ceiling,
                 tiers.sure,
                 tiers.half,
                 tiers.tenth));
