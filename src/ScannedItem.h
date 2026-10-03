@@ -104,3 +104,29 @@ public:
     // Parses one fixed kRowFields-field auctionsim.dat item row. std::nullopt if malformed.
     static std::optional<ScannedItem> TryParse(std::string_view dataLine);
 };
+
+// What one item sells for at one auction house, pooled over all its rows there. An
+// item with random properties or suffixes ("of the Bear") has a row per suffix, and
+// every suffix gets this same price: a suffix's own row is a poor guide to what that
+// suffix is worth. Checked against auctionsim.dat by predicting each suffix's market
+// price in the other house (36k pairs, 5+ samples on both sides): the item's median
+// over its rows is off by x1.64 typically and overestimates 2x or more in 12% of
+// cases; the suffix's own row is off by x1.98 and overestimates in 24%, and loses
+// even when both rows have 20+ samples.
+// Blending the two (shrinking the row toward the median) never beat the median's
+// typical error and always overestimated more often. Many dear suffix rows are one
+// seller relisting at one price, which the other house's row for the same suffix
+// doesn't share. For an item with one row, this is that row.
+struct ItemPrice
+{
+    uint32 market = 0;       // median of the rows' GetMarketPrice()
+    uint32 ceiling = 0;      // market x the rows' median GetBuyCeiling()/GetMarketPrice(), at least market
+    uint32 listLow = 0;      // market x the rows' median GetListLow()/GetMarketPrice()
+    uint32 listHigh = 0;     // market x the rows' median GetListHigh()/GetMarketPrice()
+    uint32 sampleCount = 0;  // the rows' sample counts summed (saturating)
+    uint32 rowCount = 0;
+
+    // Medians are the lower median: with an even number of rows, the lower of the two
+    // middle values. An empty `rows` gives all zeros.
+    static ItemPrice Pool(std::vector<ScannedItem const*> const& rows);
+};

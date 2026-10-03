@@ -131,7 +131,8 @@ void AuctionListingService::ListNewAuctions(
                     continue;
                 }
 
-                if (!AuctionPricing::IsListablePrice(scan.GetMarketPrice()))
+                ItemPrice const* price = _config.FindItemPrice(houseId, itemClass, quality, itemId);
+                if (!price || !AuctionPricing::IsListablePrice(price->market))
                 {
                     dropWeight(idx);
                     continue;
@@ -177,10 +178,17 @@ AuctionEntry* AuctionListingService::ListOneItem(
         return nullptr;
     }
 
+    // Priced as the bot buys: at the item's pooled price, whatever this row's suffix.
+    // Priced by its own row, a cheap suffix could be bought from the bot and sold back
+    // to it at the item's price. The row's own figures only if the item has no pooled
+    // price at this house (a test listing from another house's rows).
+    ItemPrice const* pooled = _config.FindItemPrice(houseId, proto->Class, proto->Quality, scan.GetItemID());
+    ItemPrice const price = pooled ? *pooled : ItemPrice::Pool({&scan});
+
     uint32 quantity = AuctionPricing::RollStackSize(
         scan.GetTypicalStackSize(), scan.GetStackLow(), scan.GetStackHigh(), proto->GetMaxStackSize());
-    uint32 buyout = AuctionPricing::RollBuyoutPrice(
-        scan.GetListLow(), scan.GetMarketPrice(), scan.GetListHigh(), quantity, scan.GetSampleCount());
+    uint32 buyout =
+        AuctionPricing::RollBuyoutPrice(price.listLow, price.market, price.listHigh, quantity, price.sampleCount);
 
     // The item only ever lives in the auction house, never in the bot's inventory or
     // item-update queue -- otherwise Player::_SaveInventory trips over it (bag 255 /

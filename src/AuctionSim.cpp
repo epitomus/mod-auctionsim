@@ -250,9 +250,10 @@ void AuctionSim::ScanAuctions(AuctionHouseId _AuctionHouseId)
             continue;
         }
 
-        ScannedItem const* scannedItem =
-            config->FindScannedItem(_AuctionHouseId, proto->Class, proto->Quality, auction->item_template);
-        if (!scannedItem)
+        // Every random suffix of an item is bought at the item's pooled price (ItemPrice).
+        ItemPrice const* itemPrice =
+            config->FindItemPrice(_AuctionHouseId, proto->Class, proto->Quality, auction->item_template);
+        if (!itemPrice)
         {
             continue;
         }
@@ -280,7 +281,7 @@ void AuctionSim::ScanAuctions(AuctionHouseId _AuctionHouseId)
         }
 
         buyingService->ConsiderForPurchase(
-            auction, pricePerItem, scannedItem->GetMarketPrice(), scannedItem->GetBuyCeiling());
+            auction, pricePerItem, itemPrice->market, itemPrice->ceiling);
     }
 
     buyingService->SortQueue();
