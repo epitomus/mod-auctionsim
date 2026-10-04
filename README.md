@@ -234,3 +234,46 @@ This window.
 
 
 <img src="images/addon.png">
+
+## GM Commands
+
+All commands need an administrator account (GM level 3) and also work from the worldserver console and over SOAP.
+
+- `.auctionsim scan` -- scan both auction houses now (list new items, queue buys and bids; in Market mode, one market step).
+- `.auctionsim showqueue` -- size and timing of the queue.
+- `.auctionsim runqueue` -- carry out every queued buy and bid now.
+- `.auctionsim delete` -- remove the bot's auctions nobody has bid on.
+- `.auctionsim cleanovercap` -- remove the bot's auctions above the configured level caps, again skipping any with a bid.
+- `.auctionsim test` -- run the self-tests (briefly lists and buys a few real auctions).
+- `.auctionsim market status|fill|reload|purge` -- Market mode, see "Experimental features" above.
+- `.auctionsim price <item id or link>` -- what the bot pays for an item, per auction house.
+
+### `.auctionsim price`
+
+Tells a seller (or a tool) at what price the Replay bot buys an item outright. It reads only the loaded price data, so it works while the module is disabled.
+
+```
+> .auctionsim price 36908
+format: 1
+item: 36908
+name: Frost Lotus
+quality: 2
+mode: Replay
+enabled: yes
+buyable: yes
+vendor_cap: 0
+house: name=alliance id=2 data=yes rows=1 samples=22331 market=124500 ceiling=145250 sure=124500 half=134875 tenth=145250
+house: name=horde id=6 data=yes rows=1 samples=26690 market=129999 ceiling=159000 sure=129999 half=144499 tenth=159000
+```
+
+- All prices are per unit, in copper. The bot compares an auction's buyout divided by its stack size.
+- `mode`: `Replay` or `Market` (AuctionSim.Mode). The prices describe Replay mode's buying; Market mode's buyers buy by other rules.
+- `enabled`: whether the bot is running (it scans and buys only then). `buyable`: `no` for poor-quality (grey) items, which the bot never buys.
+- `vendor_cap`: the item's vendor purchase price when a vendor stocks it (`npc_vendor`) in unlimited quantity for gold, else 0. The bot never pays more than that per unit. A vendor that sells it only in limited stock or for tokens doesn't count (issue #6).
+- One `house:` line per auction house, as space-separated `key=value` fields. With `data=no` the item isn't in the price data for that house, and the bot never buys it there. With `data=yes`: `market` (outlier-trimmed median) and `ceiling` (75th percentile) of the scanned prices, `rows` and `samples` the price rows and scanned buyouts they come from (an item with random suffixes has a row per suffix and one price for every suffix, pooled over its rows: see "Random suffixes" above; any other item has 1 row), then the highest price per unit for each chance of a sale to the bot:
+  - `sure`: at or under it the bot always buys: its next scan queues the purchase, which goes through within 20 minutes.
+  - `half`: above `sure` and at or under `half`, a 50% chance over the auction's remaining time at each scan (the bot reconsiders it at every scan, every 30 minutes, so the chances compound: 93% over a 12 h listing, 95% over 24 h, 97% over 48 h).
+  - `tenth`: above `half` and at or under `tenth`, at least 10% over the remaining time at each scan (at least 33%, 37% and 42% over 12, 24 and 48 h; each scan rolls where the 50% band ends, between half and 70% of the way to the ceiling). Above `tenth` the bot never buys.
+  All three are capped at `vendor_cap` when that isn't 0. They are buyouts: an auction whose starting bid is below its buyout can also be won by the bot's bidding (see "Bidding" above).
+- `format` is currently 1 and changes only if a line changes meaning. Keys and fields may be added; tools should ignore those they don't know.
+- An unknown item, or price data that failed to load, is an error.

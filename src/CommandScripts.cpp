@@ -3,11 +3,13 @@
 #include <chrono>
 #include <string>
 #include <utility>
+#include "AuctionPricing.h"
 #include "AuctionSim.h"
 #include "Chat.h"
 #include "ChatCommand.h"
 #include "GameTime.h"
 #include "Log.h"
+#include "ObjectMgr.h"
 #include "ScriptMgr.h"
 
 using namespace Acore::ChatCommands;
@@ -58,6 +60,7 @@ public:
             {"cleanovercap", HandleCleanOverCapCommand, SEC_ADMINISTRATOR, Console::Yes},
             {"showqueue", HandleShowQueueCommand, SEC_ADMINISTRATOR, Console::Yes},
             {"runqueue", HandleRunQueueCommand, SEC_ADMINISTRATOR, Console::Yes},
+            {"price", HandlePriceCommand, SEC_ADMINISTRATOR, Console::Yes},
         };
         static ChatCommandTable commandTable = {
             {"auctionsim", auctionSimSubCommandTable},
@@ -249,6 +252,76 @@ public:
         std::string message = fmt::format("Ran {} queued action(s) in {} ms", ran, elapsed);
         LOG_INFO("module", "{}", message);
         handler->SendSysMessage(message);
+        return true;
+    }
+
+    // What the Replay bot pays for an item, per auction house, as `key: value` lines for
+    // tools (README: "GM Commands"). Reads the loaded price data only, so it works
+    // while the module is disabled; `enabled` says whether the bot is buying.
+    static bool HandlePriceCommand(ChatHandler* handler, Variant<Hyperlink<item>, uint32> itemArg)
+    {
+        uint32 itemId = itemArg.holds_alternative<Hyperlink<item>>()
+            ? itemArg.get<Hyperlink<item>>()->Item->ItemId
+            : itemArg.get<uint32>();
+
+        AuctionSim* sim = AuctionSim::instance();
+        ASConfig const* config = sim ? sim->GetConfig() : nullptr;
+        if (!config)
+        {
+            handler->SendErrorMessage("AuctionSim price data (auctionsim.dat) is not loaded.");
+            return false;
+        }
+
+        ItemTemplate const* proto = sObjectMgr->GetItemTemplate(itemId);
+        if (!proto)
+        {
+            handler->SendErrorMessage(fmt::format("Item {} does not exist.", itemId), false);
+            return false;
+        }
+
+        // As ScanAuctions caps a purchase.
+        uint32 vendorCap =
+            (config->IsVendorSold(proto->ItemId) && proto->BuyPrice > 0) ? static_cast<uint32>(proto->BuyPrice) : 0;
+        handler->SendSysMessage("format: 1");
+        handler->SendSysMessage(fmt::format("item: {}", proto->ItemId));
+        handler->SendSysMessage(fmt::format("name: {}", proto->Name1));
+        handler->SendSysMessage(fmt::format("quality: {}", proto->Quality));
+        handler->SendSysMessage(fmt::format("mode: {}", ASConfig::ModeName(config->marketMode)));
+        handler->SendSysMessage(fmt::format("enabled: {}", sim->isEnabled && sim->GetBotPlayer() ? "yes" : "no"));
+        handler->SendSysMessage(
+            fmt::format("buyable: {}", AuctionPricing::IsBuyableQuality(proto->Quality) ? "yes" : "no"));
+        handler->SendSysMessage(fmt::format("vendor_cap: {}", vendorCap));
+
+        for (auto [houseId, houseName] : {std::pair{AuctionHouseId::Alliance, "alliance"},
+                                          std::pair{AuctionHouseId::Horde, "horde"}})
+        {
+            // The same lookup as ScanAuctions: one row per item, pooled over its
+            // random-suffix rows, whatever the suffix.
+            ScannedItem const* price = config->FindScannedItem(houseId, proto->Class, proto->Quality, itemId);
+            if (!price)
+            {
+                handler->SendSysMessage(
+                    fmt::format("house: name={} id={} data=no", houseName, static_cast<uint32>(houseId)));
+                continue;
+            }
+
+            auto const& bucket = config->ItemsFor(houseId, proto->Class, proto->Quality);
+            auto rows = std::count_if(
+                bucket.begin(), bucket.end(), [itemId](ScannedItem const* row) { return row->GetItemID() == itemId; });
+            AuctionPricing::BuyPriceTiers tiers =
+                AuctionPricing::CalculateBuyPriceTiers(price->GetMarketPrice(), price->GetBuyCeiling(), vendorCap);
+            handler->SendSysMessage(fmt::format(
+                "house: name={} id={} data=yes rows={} samples={} market={} ceiling={} sure={} half={} tenth={}",
+                houseName,
+                static_cast<uint32>(houseId),
+                rows,
+                price->GetSampleCount(),
+                price->GetMarketPrice(),
+                price->GetBuyCeiling(),
+                tiers.sure,
+                tiers.half,
+                tiers.tenth));
+        }
         return true;
     }
 };

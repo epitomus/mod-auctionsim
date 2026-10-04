@@ -543,6 +543,61 @@ namespace
         return Pass("ShouldBuyAtPrice boundaries");
     }
 
+    TestResult TestBuyPriceTiers()
+    {
+        struct Case
+        {
+            uint32 market, ceiling, vendorCap;
+            AuctionPricing::BuyPriceTiers want;
+        };
+        Case const cases[] = {
+            {100, 200, 0, {100, 150, 200}},
+            {100, 201, 0, {100, 150, 201}},  // odd spread rounds the 50% top down
+            {100, 100, 0, {100, 100, 100}},  // no spread: only the sure tier
+            {100, 50, 0, {100, 100, 100}},   // ceiling under the market, likewise
+            {100, 200, 120, {100, 120, 120}},
+            {100, 200, 80, {80, 80, 80}},
+            {100, 200, 200, {100, 150, 200}},
+        };
+        for (Case const& c : cases)
+        {
+            AuctionPricing::BuyPriceTiers got =
+                AuctionPricing::CalculateBuyPriceTiers(c.market, c.ceiling, c.vendorCap);
+            if (got.sure != c.want.sure || got.half != c.want.half || got.tenth != c.want.tenth)
+            {
+                return Fail(
+                    "CalculateBuyPriceTiers",
+                    Acore::StringFormat(
+                        "market={} ceiling={} cap={}: got {}/{}/{}, want {}/{}/{}",
+                        c.market, c.ceiling, c.vendorCap, got.sure, got.half, got.tenth,
+                        c.want.sure, c.want.half, c.want.tenth));
+            }
+        }
+
+        // The tops must sit in the tiers ShouldBuyAtPrice puts them in: sure always
+        // buys, one above tenth never does, and half is never past the lowest near/far
+        // boundary a scan can roll -- checked with ShouldBuyAtPrice's own float
+        // arithmetic, including spreads too large for a float to hold exactly.
+        AuctionPricing::BuyTolerance lowest{0.5f};
+        for (auto [market, ceiling] : {std::pair{100u, 200u}, std::pair{100u, 201u}, std::pair{1u, 16777220u},
+                                       std::pair{7u, 4000000001u}, std::pair{3u, 4294967295u}})
+        {
+            AuctionPricing::BuyPriceTiers tiers = AuctionPricing::CalculateBuyPriceTiers(market, ceiling, 0);
+            float position = static_cast<float>(tiers.half - market) / static_cast<float>(ceiling - market);
+            bool tenthOk = tiers.tenth == UINT32_MAX ||
+                !AuctionPricing::ShouldBuyAtPrice(tiers.tenth + 1, market, ceiling, lowest, 1);
+            if (!AuctionPricing::ShouldBuyAtPrice(tiers.sure, market, ceiling, lowest, 1) ||
+                position > lowest.boundaryPercent || !tenthOk)
+            {
+                return Fail(
+                    "CalculateBuyPriceTiers",
+                    Acore::StringFormat(
+                        "market={} ceiling={}: tier tops don't match ShouldBuyAtPrice", market, ceiling));
+            }
+        }
+        return Pass("CalculateBuyPriceTiers");
+    }
+
     TestResult TestRollBuyTimeBounds()
     {
         constexpr time_t now = 1'000'000;
@@ -2536,6 +2591,7 @@ namespace AuctionSimTests
             TestRollStartBidBounds(),
             TestRollBuyToleranceBounds(),
             TestShouldBuyAtPriceBoundaries(),
+            TestBuyPriceTiers(),
             TestShouldBidAtPriceBoundaries(),
             TestRollBidValuationBounds(),
             TestRollBidAmountBounds(),
