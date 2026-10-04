@@ -279,9 +279,11 @@ public:
             return false;
         }
 
-        // As ScanAuctions caps a purchase.
-        uint32 vendorCap =
-            (config->IsVendorSold(proto->ItemId) && proto->BuyPrice > 0) ? static_cast<uint32>(proto->BuyPrice) : 0;
+        // As ScanAuctions caps a purchase: the vendor's price for one item (BuyPrice buys
+        // BuyCount of them), rounded down, at least 1 copper.
+        uint32 vendorCap = (config->IsVendorSold(proto->ItemId) && proto->BuyPrice > 0)
+            ? std::max(1u, static_cast<uint32>(proto->BuyPrice) / std::max(1u, proto->BuyCount))
+            : 0;
         handler->SendSysMessage("format: 1");
         handler->SendSysMessage(fmt::format("item: {}", proto->ItemId));
         handler->SendSysMessage(fmt::format("name: {}", proto->Name1));
