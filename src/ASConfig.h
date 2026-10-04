@@ -80,9 +80,13 @@ public:
     // [house][class][quality] -> the pool the listing service draws from.
     std::vector<ScannedItem*> ItemSelectionTable[kAuctionHouseIndexBound][MAX_ITEM_CLASS][MAX_ITEM_QUALITY];
 
+    // An item's rows pooled into one (ScannedItem::Pool), for each item with more than
+    // one row at a house (one per random suffix). A deque for the same reason as ScanData.
+    std::deque<ScannedItem> PooledData;
+
     // (house, class, quality, itemID) -> that item's row, so FindScannedItem is
-    // O(1) during a scan instead of a linear bucket walk. First row wins on the
-    // rare duplicate key (suffix is not part of the key, matching the old search).
+    // O(1) during a scan instead of a linear bucket walk. An item with several rows
+    // (suffix is not part of the key) maps to its pooled row in PooledData.
     std::unordered_map<uint64_t, ScannedItem const*> ItemIndex;
 
     // Per-(itemClass, quality) listing multiplier vs. the real market, from the
@@ -107,9 +111,9 @@ public:
 
     std::vector<ScannedItem*> const& ItemsFor(AuctionHouseId houseId, uint32 itemClass, uint32 quality) const;
 
-    // O(1) lookup of a specific item's row within one (houseId, itemClass, quality)
-    // bucket. Returns nullptr if the coordinate is out of range or the item is not
-    // in that bucket.
+    // O(1) lookup of a specific item's row (its pooled row if it has several) within one
+    // (houseId, itemClass, quality) bucket. Returns nullptr if the coordinate is out of
+    // range or the item is not in that bucket.
     ScannedItem const* FindScannedItem(AuctionHouseId houseId, uint32 itemClass, uint32 quality, uint32 itemID) const;
 
     // One (itemClass, quality) mask cell, addressed the same way the addon bridge's wire

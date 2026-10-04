@@ -129,4 +129,29 @@ public:
 
     // Parses one fixed kRowFields-field auctionsim.dat item row. std::nullopt if malformed.
     static std::optional<ScannedItem> TryParse(std::string_view dataLine);
+
+    // One item's rows at one auction house pooled into a single row, which buying,
+    // bidding and listing price every random suffix of the item by. An item with random
+    // properties or suffixes ("of the Bear") has a row per suffix, and a suffix's own
+    // row is a poor guide to what that suffix is worth. Checked against auctionsim.dat
+    // by predicting each suffix's market price in the other house (36k pairs, 5+
+    // samples on both sides): the item's median over its rows is off by x1.64 typically
+    // and overestimates 2x or more in 12% of cases; the suffix's own row is off by
+    // x1.97 and overestimates in 24%, and loses even when both rows have 20+ samples.
+    // Blending the two (shrinking the row toward the median) never beat the median's
+    // typical error and always overestimated more often.
+    //
+    // The pooled row is the first row (as the lookup returned before) with its price
+    // stats replaced, so every price getter returns the pooled figure:
+    //   GetMarketPrice()      the lower median of the rows' market prices
+    //   GetBuyCeiling(), GetListLow(), GetListHigh(), GetBidValuationLow()
+    //                         the pooled market x the lower median over the rows of
+    //                         that figure / the row's own market (a median of each
+    //                         figure on its own could pair a 5g market with a 198g
+    //                         ceiling)
+    //   GetSampleCount()      the rows' sample counts summed
+    // Pool sets every price stat; a new getter on them needs its pooled figure set here
+    // and a check in the "Pooled row" self-test.
+    // `rows` is non-empty.
+    static ScannedItem Pool(std::vector<ScannedItem const*> const& rows);
 };
