@@ -4,6 +4,7 @@
 #include "AuctionListingService.h"
 #include "AuctionPricing.h"
 #include "Bot.h"
+#include "DatabaseEnv.h"
 #include "GameTime.h"
 #include "ObjectMgr.h"
 #include "ScannedItem.h"
@@ -482,6 +483,45 @@ namespace
         return Pass("IsWithinVendorBuyPrice boundary");
     }
 
+    // The vendor cap counts only unlimited, gold-only npc_vendor rows (issue #6): an
+    // item whose every row has a stock limit (maxcount) or a token cost (ExtendedCost)
+    // must not be capped, and an item with an unlimited gold row must be.
+    TestResult TestVendorCapRows(ASConfig const& config)
+    {
+        QueryResult limited = WorldDatabase.Query(
+            "SELECT item FROM npc_vendor WHERE item > 0 GROUP BY item "
+            "HAVING SUM(maxcount = 0 AND ExtendedCost = 0) = 0");
+        uint32 limitedCount = 0;
+        if (limited)
+        {
+            do
+            {
+                uint32 itemId = limited->Fetch()[0].Get<uint32>();
+                if (config.IsVendorSold(itemId))
+                {
+                    return Fail("Vendor cap rows", Acore::StringFormat(
+                        "item {} is sold only in limited stock or for tokens but is capped", itemId));
+                }
+                limitedCount++;
+            } while (limited->NextRow());
+        }
+
+        QueryResult unlimited = WorldDatabase.Query(
+            "SELECT item FROM npc_vendor WHERE item > 0 AND maxcount = 0 AND ExtendedCost = 0 LIMIT 1");
+        if (unlimited)
+        {
+            uint32 itemId = unlimited->Fetch()[0].Get<uint32>();
+            if (!config.IsVendorSold(itemId))
+            {
+                return Fail("Vendor cap rows",
+                    Acore::StringFormat("item {} is sold in unlimited stock for gold but is not capped", itemId));
+            }
+        }
+        return Pass("Vendor cap rows",
+            Acore::StringFormat("{} limited/token-only items uncapped, {} capped", limitedCount,
+                config.vendorSoldItems.size()));
+    }
+
     TestResult TestIsBuyableQuality()
     {
         if (AuctionPricing::IsBuyableQuality(0))
@@ -655,6 +695,7 @@ namespace AuctionSimTests
             TestWeightedPick(),
             TestIsWithinLevelCapBoundary(),
             TestIsWithinVendorBuyPriceBoundary(),
+            TestVendorCapRows(config),
             TestIsBuyableQuality(),
             TestBuyQueuePopulatesOnQualifyingPrice(bot),
             TestBuyQueueDedupesRescan(bot),
