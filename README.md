@@ -143,7 +143,7 @@ house: name=horde id=6 data=yes rows=1 samples=26518 market=129999 ceiling=15940
 
 - All prices are per unit, in copper. The bot compares an auction's buyout divided by its stack size.
 - `enabled`: whether the bot is running (it scans and buys only then). `buyable`: `no` for poor-quality (grey) items, which the bot never buys.
-- `vendor_cap`: the item's vendor purchase price when a vendor stocks it (`npc_vendor`), else 0. The bot never pays more than that per unit. It applies even when the only vendor has limited stock (issue #6).
+- `vendor_cap`: the item's vendor purchase price when a vendor stocks it (`npc_vendor`) in unlimited quantity for gold, else 0. The bot never pays more than that per unit. A vendor that sells it only in limited stock or for tokens doesn't count (issue #6).
 - One `house:` line per auction house, as space-separated `key=value` fields. With `data=no` the item isn't in the price data for that house, and the bot never buys it there. With `data=yes`: `market` (outlier-trimmed median) and `ceiling` (75th percentile) of the scanned prices, `rows` and `samples` the price rows and scanned buyouts they come from (an item with random suffixes has a row per suffix and one price for every suffix, the median over its rows: see "Random suffixes" above; any other item has 1 row), then the highest price per unit for each chance of a sale to the bot:
   - `sure`: at or under it the bot always buys: its next hourly scan queues the purchase, which goes through within 45 minutes.
   - `half`: above `sure` and at or under `half`, a 50% chance over the auction's remaining time at each scan (the bot reconsiders it at every scan, so the chances compound: 88% over a 12 h listing, 93% over 24 h, 95% over 48 h).
