@@ -16,6 +16,7 @@
 #include "Log.h"
 #include "Mail.h"
 #include "ScriptMgr.h"
+#include "World.h"
 #include "WorldConfig.h"
 
 namespace
@@ -133,13 +134,6 @@ void AuctionSim::OnStartup()
         return;
     }
 
-    if (ServerConfigs::CONFIG_ALLOW_TWO_SIDE_INTERACTION_AUCTION == 1)
-    {
-        LOG_ERROR("module", "AuctionSim: Two sided auction interaction is not allowed");
-        isEnabled = false;
-        return;
-    }
-
     if (!StartOrReloadBot(false))  // config is fresh at boot; no reload
     {
         isEnabled = false;
@@ -158,6 +152,14 @@ bool AuctionSim::StartOrReloadBot(bool reloadConfig)
 {
     if (!config)
     {
+        return false;
+    }
+
+    // Checked here rather than only at startup, so enabling from the addon can't
+    // bypass it. With two-side auctions, both factions share one house.
+    if (sWorld->getBoolConfig(CONFIG_ALLOW_TWO_SIDE_INTERACTION_AUCTION))
+    {
+        LOG_ERROR("module", "AuctionSim: Two sided auction interaction is not allowed");
         return false;
     }
 
@@ -254,7 +256,8 @@ void AuctionSim::ScanAuctions(AuctionHouseId _AuctionHouseId)
 
         // Never buy grey items, and never pay more per unit than it would cost to buy
         // the item straight from a vendor -- both are gold-cheese vectors. The vendor
-        // cap only applies when a vendor actually stocks the item (npc_vendor): a
+        // cap only applies when a vendor actually stocks the item (npc_vendor), without
+        // a stock limit or token cost: a
         // BuyPrice left on an item no vendor sells is stale DB data, not a real floor,
         // so those pass the check (0 disables it). Grey auctions are still counted
         // above so the listing side is unaffected.
