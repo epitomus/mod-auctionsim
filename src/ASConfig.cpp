@@ -317,9 +317,11 @@ void ASConfig::LoadItemRow(std::string const& line, std::string const& filepath)
 }
 
 // Resolves each row's item_template once and files it into ItemSelectionTable and
-// ItemIndex. ScanData is a deque, so the pointers taken here stay valid.
+// ItemIndex, pooling an item's rows when it has several. ScanData and PooledData are
+// deques, so the pointers taken here stay valid.
 void ASConfig::BuildSelectionTables(std::string const& filepath)
 {
+    std::unordered_map<uint64_t, std::vector<ScannedItem const*>> rowsByItem;
     for (ScannedItem& item : this->ScanData)
     {
         ItemTemplate const* proto = sObjectMgr->GetItemTemplate(item.GetItemID());
@@ -340,7 +342,21 @@ void ASConfig::BuildSelectionTables(std::string const& filepath)
         }
 
         this->ItemSelectionTable[house][proto->Class][proto->Quality].push_back(&item);
-        this->ItemIndex.try_emplace(IndexKey(house, proto->Class, proto->Quality, item.GetItemID()), &item);
+        rowsByItem[IndexKey(house, proto->Class, proto->Quality, item.GetItemID())].push_back(&item);
+    }
+
+    this->ItemIndex.reserve(rowsByItem.size());
+    for (auto const& [key, rows] : rowsByItem)
+    {
+        if (rows.size() > 1)
+        {
+            this->PooledData.push_back(ScannedItem::Pool(rows));
+            this->ItemIndex.emplace(key, &this->PooledData.back());
+        }
+        else
+        {
+            this->ItemIndex.emplace(key, rows.front());
+        }
     }
 }
 

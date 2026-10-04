@@ -132,7 +132,8 @@ void AuctionListingService::ListNewAuctions(
                     continue;
                 }
 
-                if (!AuctionPricing::IsListablePrice(scan.GetMarketPrice()))
+                ScannedItem const* priced = _config.FindScannedItem(houseId, itemClass, quality, itemId);
+                if (!priced || !AuctionPricing::IsListablePrice(priced->GetMarketPrice()))
                 {
                     dropWeight(idx);
                     continue;
@@ -178,10 +179,17 @@ AuctionEntry* AuctionListingService::ListOneItem(
         return nullptr;
     }
 
+    // Priced as the bot buys: from the item's pooled row, whatever this row's suffix.
+    // Priced by its own row, a cheap suffix could be bought from the bot and sold back
+    // to it at the item's price. This row's own prices only if the item has no row at
+    // this house (a test listing from another house's rows).
+    ScannedItem const* pooled = _config.FindScannedItem(houseId, proto->Class, proto->Quality, scan.GetItemID());
+    ScannedItem const& priced = pooled ? *pooled : scan;
+
     uint32 quantity = AuctionPricing::RollStackSize(
         scan.GetTypicalStackSize(), scan.GetStackLow(), scan.GetStackHigh(), proto->GetMaxStackSize());
     uint32 buyout = AuctionPricing::RollBuyoutPrice(
-        scan.GetListLow(), scan.GetMarketPrice(), scan.GetListHigh(), quantity, scan.GetSampleCount());
+        priced.GetListLow(), priced.GetMarketPrice(), priced.GetListHigh(), quantity, priced.GetSampleCount());
     // Realistic starting bid: a fraction of this listing's buyout, rolled from the
     // observed MINBID/BUYOUT distribution for the item (basis points).
     uint32 startbid = AuctionPricing::RollStartBid(
